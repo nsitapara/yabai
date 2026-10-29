@@ -628,6 +628,13 @@ static EVENT_HANDLER(APPLICATION_FRONT_SWITCHED)
         g_window_manager.focused_window_id = 0;
         g_window_manager.focused_window_psn = application->psn;
         g_mouse_state.ffm_window_id = 0;
+
+        //
+        // NOTE: The focused window may not be known yet (still being resolved, or its app was too busy to
+        // answer when it opened). Remember it so it receives focus once it is added.
+        //
+
+        if (application_focused_window_id) window_manager_add_lost_focused_event(&g_window_manager, application_focused_window_id);
         window_manager_validate_and_check_for_windows_on_space(&g_space_manager, &g_window_manager, g_space_manager.current_space_id);
         return;
     }
@@ -768,8 +775,38 @@ static EVENT_HANDLER(WINDOW_DESTROYED);
 
 static EVENT_HANDLER(WINDOW_CREATED)
 {
-    uint32_t window_id = ax_window_id(context);
-    if (!window_id) { CFRelease(context); return; }
+    uint32_t window_id = 0;
+    AXError result = _AXUIElementGetWindow(context, &window_id);
+
+    //
+    // NOTE: An app whose main thread is blocked when its window opens (e.g. on a keychain prompt at launch)
+    // cannot answer _AXUIElementGetWindow, and kAXCreatedNotification is never sent again for that window.
+    // Retry with backoff (1+2+4+8+16+32s); each failed call stalls this thread for the AX messaging timeout.
+    // After the last retry, the app's next activation or a space change resolves it through applications_to_refresh.
+    //
+
+    if (!window_id) {
+        struct application *application = result == kAXErrorCannotComplete ? window_manager_find_application(&g_window_manager, ax_window_pid(context)) : NULL;
+        if (application && param1 < 6) {
+            int attempt = param1 + 1;
+            debug("%s: %s (%d) did not answer, retry %d..\n", __FUNCTION__, application->name, application->pid, attempt);
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 << param1) * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+                event_loop_post(&g_event_loop, WINDOW_CREATED, context, attempt);
+            });
+            return;
+        }
+
+        if (application) {
+            bool queued = false;
+            for (int i = 0; i < buf_len(g_window_manager.applications_to_refresh); ++i) {
+                if (g_window_manager.applications_to_refresh[i] == application) { queued = true; break; }
+            }
+            if (!queued) buf_push(g_window_manager.applications_to_refresh, application);
+        }
+
+        CFRelease(context);
+        return;
+    }
 
     //
     // NOTE: Apps that order a window out on close (Spotify, ChatGPT) reopen it with a new element

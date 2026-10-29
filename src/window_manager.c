@@ -1732,7 +1732,22 @@ bool window_manager_add_existing_application_windows(struct space_manager *sm, s
                     AXUIElementRef element_ref = _AXUIElementCreateWithRemoteToken(data_ref);
 
                     const void *role = NULL;
-                    AXUIElementCopyAttributeValue(element_ref, kAXRoleAttribute, &role);
+                    uint64_t role_start = read_os_timer();
+                    AXError role_result = AXUIElementCopyAttributeValue(element_ref, kAXRoleAttribute, &role);
+
+                    //
+                    // NOTE: An app that does not answer (e.g. blocked on a keychain prompt at launch) makes every
+                    // call here wait out the AX messaging timeout, which would stall the event loop for the whole
+                    // scan. Stop once a call times out; the windows left in app_window_list queue the app in
+                    // applications_to_refresh, and its next activation or a space change resolves them.
+                    //
+
+                    if (role_result == kAXErrorCannotComplete && read_os_timer() - role_start >= read_os_freq() / 2) {
+                        debug("%s: %s did not answer, deferring the workaround\n", __FUNCTION__, application->name);
+                        if (role) CFRelease(role);
+                        CFRelease(element_ref);
+                        break;
+                    }
 
                     if (role) {
                         if (CFEqual(role, kAXWindowRole)) {
