@@ -9,3 +9,7 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/yabai-local-tests.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 
 python3 -I "$root/tests/local/check_query_json.py" "$root"
+
+xcrun clang -std=c11 -g -fsanitize=undefined -I "$root/src" "$root/tests/local/test_mouse_press.c" \
+    -framework ApplicationServices -o "$work/test-mouse-press"
+"$work/test-mouse-press"

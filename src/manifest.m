@@ -51,6 +51,7 @@
 #include "misc/log.h"
 #include "misc/helpers.h"
 #include "misc/timer.h"
+#include "misc/mouse_press.h"
 #include "misc/macho_dlsym.h"
 #include "misc/sbuffer.h"
 #define HASHTABLE_IMPLEMENTATION

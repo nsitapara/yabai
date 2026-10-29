@@ -1534,6 +1534,7 @@ static EVENT_HANDLER(MOUSE_DOWN)
     g_mouse_state.window = window;
     g_mouse_state.window_frame = g_mouse_state.window->frame;
     g_mouse_state.down_location = point;
+    g_mouse_state.down_time = read_os_timer();
     g_mouse_state.direction = 0;
 
     int64_t button = CGEventGetIntegerValueField(context, kCGMouseEventButtonNumber);
@@ -1581,6 +1582,21 @@ static EVENT_HANDLER(MOUSE_UP)
 
     struct mouse_window_info info;
     mouse_window_info_populate(&g_mouse_state, &info);
+
+    if (g_mouse_state.current_action == MOUSE_MODE_NONE && (info.changed_position || info.changed_size) &&
+        mouse_press_frame_change_is_layout(g_mouse_state.down_location, point, g_mouse_state.down_time, g_mouse_state.window->layout_time, read_os_freq())) {
+        debug("%s: %d changed frame without a user drag, restoring its tile..\n", __FUNCTION__, g_mouse_state.window->id);
+
+        if (g_mouse_state.feedback_node) {
+            g_mouse_state.feedback_node->insert_dir = 0;
+            insert_feedback_destroy(g_mouse_state.feedback_node);
+            g_mouse_state.feedback_node = NULL;
+        }
+
+        struct window_node *node = view_find_window_node(src_view, g_mouse_state.window->id);
+        if (node) window_node_flush(node);
+        goto err;
+    }
 
     double cursor_dx = fabs(point.x - g_mouse_state.down_location.x);
     double cursor_dy = fabs(point.y - g_mouse_state.down_location.y);

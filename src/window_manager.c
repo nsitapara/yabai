@@ -772,6 +772,7 @@ void window_manager_animate_window(struct window_capture capture)
 void window_manager_set_window_frame(struct window *window, float x, float y, float width, float height)
 {
     if (!window || !window->application) return;
+    window->layout_time = read_os_timer();
     //
     // NOTE(asmvik): Attempting to check the window frame cache to prevent unnecessary movement and resize calls to the AX API
     // is not reliable because it is possible to perform operations that should be applied, at a higher rate than the AX API events

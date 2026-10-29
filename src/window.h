@@ -95,6 +95,7 @@ struct window
     CFStringRef title;
     CGRect frame;
     CGRect windowed_frame;
+    uint64_t layout_time;
     bool is_root;
     bool is_eligible;
     uint8_t notification;
