@@ -1322,7 +1322,16 @@ static EVENT_HANDLER(SLS_WINDOW_IS_VISIBLE)
     SLSWindowIsOrderedIn(g_connection, wid, &ordered_in);
     if (!ordered_in) return;
 
-    uint64_t sid = space_manager_active_space();
+    //
+    // NOTE: Tile the window on its own space when that space is visible, so a window shown again on
+    // the display without focus is tiled at once. Windows on hidden spaces wait for SPACE_CHANGED.
+    //
+
+    uint64_t sid = window_space(window->id);
+    if (!sid || !space_is_visible(sid) || !space_manager_is_window_on_space(sid, window)) {
+        sid = space_manager_active_space();
+    }
+
     window_manager_window_did_order_in(&g_window_manager, window, space_manager_is_window_on_space(sid, window) ? sid : 0);
 }
 
