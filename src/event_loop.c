@@ -1472,8 +1472,29 @@ static EVENT_HANDLER(SPACE_CHANGED)
 
 static EVENT_HANDLER(DISPLAY_CHANGED)
 {
-    uint32_t new_did = display_manager_active_display_id();
-    if (!new_did) return;
+    //
+    // NOTE: While displays re-probe at wake the menu-bar display can be unreadable for a moment, and
+    // display_manager_active_display_id() then answers with the display we already had. Look again
+    // shortly instead of reading the event as a change to that display; no second notification arrives.
+    //
+
+    uint32_t new_did = 0;
+    CFStringRef uuid = display_manager_active_display_uuid();
+    if (uuid) {
+        new_did = display_id(uuid);
+        CFRelease(uuid);
+    }
+
+    if (!new_did) {
+        if (param1 < 10) {
+            int attempt = param1 + 1;
+            debug("%s: active display is unreadable, retry %d..\n", __FUNCTION__, attempt);
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.2f * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+                event_loop_post(&g_event_loop, DISPLAY_CHANGED, NULL, attempt);
+            });
+        }
+        return;
+    }
 
     if (g_display_manager.current_display_id == new_did) {
         debug("%s: newly activated display %d was already active (%d)! ignoring event..\n", __FUNCTION__, g_display_manager.current_display_id, new_did);

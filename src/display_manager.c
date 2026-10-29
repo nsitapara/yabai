@@ -105,7 +105,8 @@ uint32_t display_manager_active_display_id(void)
 
     //
     // NOTE: While displays re-probe at wake there can be no menu-bar display.
-    // Keep the last known display instead of crashing; DISPLAY_CHANGED then ignores the flap.
+    // Keep the last known display instead of crashing. DISPLAY_CHANGED reads the
+    // menu-bar display itself and retries, so a real change is not lost.
     //
 
     if (!result) result = g_display_manager.current_display_id;
