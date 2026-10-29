@@ -319,8 +319,9 @@ void window_manager_window_did_order_out(struct window_manager *wm, struct windo
     }
 }
 
-// NOTE: sid is the active space when the window is on it, and 0 otherwise; a window
-// ordered in on an inactive space is tiled when that space becomes active.
+// NOTE: sid is the window's space when that space is visible, else the active space when the
+// window is on it, else 0; a window ordered in on a hidden space is tiled by SPACE_CHANGED
+// when that space becomes visible.
 void window_manager_window_did_order_in(struct window_manager *wm, struct window *window, uint64_t sid)
 {
     window_clear_flag(window, WINDOW_ORDERED_OUT);
