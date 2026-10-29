@@ -1490,7 +1490,8 @@ static EVENT_HANDLER(DISPLAY_CHANGED)
     //
     // NOTE: While displays re-probe at wake the menu-bar display can be unreadable for a moment, and
     // display_manager_active_display_id() then answers with the display we already had. Look again
-    // shortly instead of reading the event as a change to that display; no second notification arrives.
+    // shortly instead of reading the event as a change to that display. If it stays unreadable for
+    // longer, the resync that wake and display hotplug post (display_changed_resync) catches up.
     //
 
     uint32_t new_did = 0;
@@ -1561,6 +1562,19 @@ static EVENT_HANDLER(DISPLAY_CHANGED)
     event_signal_push(SIGNAL_DISPLAY_CHANGED, NULL);
 }
 
+//
+// NOTE: macOS sends one active-display notification per change. If the menu-bar display could not be read
+// then, DISPLAY_CHANGED gives up after its retries and nothing else updates current_display_id. Wake and
+// display hotplug look again a second later; DISPLAY_CHANGED ignores the event when nothing changed.
+//
+
+static void display_changed_resync(void)
+{
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1.0f * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        event_loop_post(&g_event_loop, DISPLAY_CHANGED, NULL, 0);
+    });
+}
+
 static EVENT_HANDLER(DISPLAY_ADDED)
 {
     uint32_t did = (uint32_t)(intptr_t) context;
@@ -1568,6 +1582,7 @@ static EVENT_HANDLER(DISPLAY_ADDED)
     space_manager_handle_display_add(&g_space_manager, did);
     window_manager_handle_display_add_and_remove(&g_space_manager, &g_window_manager, did);
     event_signal_push(SIGNAL_DISPLAY_ADDED, context);
+    display_changed_resync();
 }
 
 static EVENT_HANDLER(DISPLAY_REMOVED)
@@ -1577,6 +1592,7 @@ static EVENT_HANDLER(DISPLAY_REMOVED)
     display_manager_remove_label_for_display(&g_display_manager, did);
     window_manager_handle_display_add_and_remove(&g_space_manager, &g_window_manager, display_manager_main_display_id());
     event_signal_push(SIGNAL_DISPLAY_REMOVED, context);
+    display_changed_resync();
 }
 
 static EVENT_HANDLER(DISPLAY_MOVED)
@@ -1593,6 +1609,7 @@ static EVENT_HANDLER(DISPLAY_RESIZED)
     debug("%s: %d\n", __FUNCTION__, did);
     space_manager_mark_spaces_invalid_for_display(&g_space_manager, did);
     event_signal_push(SIGNAL_DISPLAY_RESIZED, context);
+    display_changed_resync();
 }
 
 static EVENT_HANDLER(MOUSE_DOWN)
@@ -2270,6 +2287,7 @@ static EVENT_HANDLER(SYSTEM_WOKE)
     }
 
     event_signal_push(SIGNAL_SYSTEM_WOKE, NULL);
+    display_changed_resync();
 }
 
 static EVENT_HANDLER(DAEMON_MESSAGE)
