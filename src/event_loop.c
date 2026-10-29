@@ -463,8 +463,14 @@ static EVENT_HANDLER(APPLICATION_FRONT_SWITCHED)
     struct window *visible_win = NULL;
     bool focused_on_visible_space = false;
 
+    //
+    // NOTE: window_space() falls back to the display's current space for a window that is
+    // ordered out, so a window closed to hidden would otherwise count as visible here.
+    //
+
     for (int w = 0; w < win_count; ++w) {
         struct window *win = win_list[w];
+        if (window_check_flag(win, WINDOW_ORDERED_OUT)) continue;
         if (window_check_flag(win, WINDOW_STICKY) || window_is_sticky(win->id)) {
             focused_on_visible_space = true;
             if (!visible_win) visible_win = win;
@@ -576,6 +582,7 @@ static EVENT_HANDLER(APPLICATION_FRONT_SWITCHED)
     event_signal_push(SIGNAL_APPLICATION_FRONT_SWITCHED, NULL);
     uint32_t application_focused_window_id = application_focused_window(application);
     struct window *window = window_manager_find_window(&g_window_manager, application_focused_window_id);
+    if (window && window_check_flag(window, WINDOW_ORDERED_OUT)) window = NULL;
 
     if (visible_win) {
         if (!window || !space_is_visible(window_space(window->id))) {
@@ -583,6 +590,7 @@ static EVENT_HANDLER(APPLICATION_FRONT_SWITCHED)
         }
     } else if (!window && win_count > 0) {
         for (int w = 0; w < win_count; ++w) {
+            if (window_check_flag(win_list[w], WINDOW_ORDERED_OUT)) continue;
             uint64_t sid = window_space(win_list[w]->id);
             if (space_is_visible(sid) || window_is_sticky(win_list[w]->id) || window_check_flag(win_list[w], WINDOW_STICKY)) {
                 window = win_list[w];
@@ -1220,6 +1228,51 @@ static EVENT_HANDLER(SLS_WINDOW_ORDERED)
     if (node) SLSOrderWindow(g_connection, node->feedback_window.id, 1, node->window_order[0]);
 }
 
+// NOTE: Apps that hide a window on close (e.g. Electron) order it out without minimizing it or
+// hiding the app, so none of those events arrives to untile it; the window server's own visibility
+// notifications do. The ordered-in state is checked again because these are queued: the window
+// may have been ordered back in (or out) by the time the event is handled.
+static EVENT_HANDLER(SLS_WINDOW_IS_INVISIBLE)
+{
+    uint32_t wid = (uint64_t)(intptr_t) context;
+    debug("%s: %d\n", __FUNCTION__, wid);
+
+    struct window *window = window_manager_find_window(&g_window_manager, wid);
+    if (!window) return;
+
+    if (!__sync_bool_compare_and_swap(&window->id_ptr, &window->id, &window->id)) {
+        debug("%s: %d has been marked invalid by the system, ignoring event..\n", __FUNCTION__, wid);
+        return;
+    }
+
+    uint8_t ordered_in = 0;
+    SLSWindowIsOrderedIn(g_connection, wid, &ordered_in);
+    if (ordered_in) return;
+
+    window_manager_window_did_order_out(&g_window_manager, window);
+}
+
+static EVENT_HANDLER(SLS_WINDOW_IS_VISIBLE)
+{
+    uint32_t wid = (uint64_t)(intptr_t) context;
+    debug("%s: %d\n", __FUNCTION__, wid);
+
+    struct window *window = window_manager_find_window(&g_window_manager, wid);
+    if (!window || !window_check_flag(window, WINDOW_ORDERED_OUT)) return;
+
+    if (!__sync_bool_compare_and_swap(&window->id_ptr, &window->id, &window->id)) {
+        debug("%s: %d has been marked invalid by the system, ignoring event..\n", __FUNCTION__, wid);
+        return;
+    }
+
+    uint8_t ordered_in = 0;
+    SLSWindowIsOrderedIn(g_connection, wid, &ordered_in);
+    if (!ordered_in) return;
+
+    uint64_t sid = space_manager_active_space();
+    window_manager_window_did_order_in(&g_window_manager, window, space_manager_is_window_on_space(sid, window) ? sid : 0);
+}
+
 static EVENT_HANDLER(SLS_WINDOW_DESTROYED)
 {
     uint32_t wid = (uint64_t)(intptr_t) context;
@@ -1338,6 +1391,7 @@ static EVENT_HANDLER(SPACE_CHANGED)
 
                 for (int w = 0; w < win_count; ++w) {
                     struct window *win = win_list[w];
+                    if (window_check_flag(win, WINDOW_ORDERED_OUT)) continue;
                     if (window_check_flag(win, WINDOW_STICKY) || window_is_sticky(win->id) || space_is_visible(window_space(win->id))) {
                         has_visible_window = true;
                         break;
