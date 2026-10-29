@@ -1387,7 +1387,7 @@ static EVENT_HANDLER(SPACE_CHANGED)
 
     if (dt_mc_exit_ms < 400 && !mouse_clicked) {
         uint64_t active_sid = space_manager_active_space();
-        if (prev_sid && active_sid != prev_sid) {
+        if (prev_sid && active_sid != prev_sid && space_manager_mission_control_index(prev_sid) > 0) {
             debug("%s: space changed to %lld after mission control cancellation, restoring prev_sid %lld..\n",
                   __FUNCTION__, active_sid, prev_sid);
             space_manager_focus_space(prev_sid);
@@ -2055,6 +2055,73 @@ static EVENT_HANDLER(MISSION_CONTROL_CHECK_FOR_EXIT)
     CFRelease(window_list);
 }
 
+struct mission_control_restore
+{
+    uint32_t prev_wid;
+    uint64_t prev_sid;
+    bool mouse_clicked;
+};
+
+static void mission_control_restore_focus(uint32_t prev_wid, uint64_t prev_sid, bool mouse_clicked)
+{
+    uint64_t current_sid = space_manager_active_space();
+    uint64_t now = read_os_timer();
+    uint64_t last_gesture_time = __atomic_load_n(&__last_gesture_time, __ATOMIC_RELAXED);
+    uint64_t dt_gesture_ms = (now > last_gesture_time) ? (now - last_gesture_time) / 1000000ULL : 0;
+    bool exited_via_gesture = dt_gesture_ms < 800 || __atomic_load_n(&__pending_gesture, __ATOMIC_RELAXED);
+    bool is_cancellation = exited_via_gesture || !mouse_clicked;
+
+    //
+    // NOTE: The space Mission Control was opened from may be gone (e.g. a desktop removed while it was open).
+    //
+
+    if (prev_sid && space_manager_mission_control_index(prev_sid) <= 0) return;
+
+    if (prev_sid && (current_sid == prev_sid || is_cancellation)) {
+        if (current_sid != prev_sid) {
+            debug("%s: returning from previewed space %lld to original space %lld (gesture=%d, clicked=%d)\n",
+                  __FUNCTION__, current_sid, prev_sid, exited_via_gesture, mouse_clicked);
+            space_manager_focus_space(prev_sid);
+            current_sid = prev_sid;
+        }
+
+        struct view *view = space_manager_find_view(&g_space_manager, current_sid);
+        if (view_is_invalid(view)) {
+            view_update(view);
+        }
+
+        struct window *restore_window = NULL;
+        if (prev_wid) {
+            struct window *prev_window = window_manager_find_window(&g_window_manager, prev_wid);
+            if (prev_window && !window_check_flag(prev_window, WINDOW_MINIMIZE)) {
+                uint64_t win_sid = window_space(prev_window->id);
+                if (win_sid == current_sid || window_is_sticky(prev_window->id)) {
+                    restore_window = prev_window;
+                }
+            }
+        }
+
+        if (!restore_window) {
+            restore_window = window_manager_find_window_on_space_by_rank_filtering_window(&g_window_manager, current_sid, 1, 0);
+        }
+
+        if (restore_window) {
+            debug("%s: restoring focus to previous window %s %d on space %lld\n", __FUNCTION__, restore_window->application->name, restore_window->id, current_sid);
+            SLSSpaceSetFrontPSN(g_connection, current_sid, restore_window->application->psn);
+            window_manager_focus_window_with_raise(&restore_window->application->psn, restore_window->id, restore_window->ref);
+
+            g_process_manager.last_front_pid = g_process_manager.front_pid;
+            g_process_manager.front_pid = restore_window->application->pid;
+            g_window_manager.last_window_id = g_window_manager.focused_window_id;
+            g_window_manager.focused_window_id = restore_window->id;
+            g_window_manager.focused_window_psn = restore_window->application->psn;
+            event_signal_push(SIGNAL_WINDOW_FOCUSED, restore_window);
+        } else {
+            _SLPSSetFrontProcessWithOptions(&g_process_manager.finder_psn, 0, kCPSNoWindows);
+        }
+    }
+}
+
 static EVENT_HANDLER(MISSION_CONTROL_EXIT)
 {
     debug("%s:\n", __FUNCTION__);
@@ -2080,63 +2147,17 @@ static EVENT_HANDLER(MISSION_CONTROL_EXIT)
     uint64_t prev_sid = __atomic_load_n(&g_mission_control_prev_sid, __ATOMIC_RELAXED);
     bool mouse_clicked = __atomic_load_n(&g_mission_control_mouse_clicked, __ATOMIC_RELAXED);
 
-    void (^restore_focus)(void) = ^{
-        uint64_t current_sid = space_manager_active_space();
-        uint64_t now = read_os_timer();
-        uint64_t last_gesture_time = __atomic_load_n(&__last_gesture_time, __ATOMIC_RELAXED);
-        uint64_t dt_gesture_ms = (now > last_gesture_time) ? (now - last_gesture_time) / 1000000ULL : 0;
-        bool exited_via_gesture = dt_gesture_ms < 800 || __atomic_load_n(&__pending_gesture, __ATOMIC_RELAXED);
-        bool is_cancellation = exited_via_gesture || !mouse_clicked;
+    mission_control_restore_focus(prev_wid, prev_sid, mouse_clicked);
 
-        if (prev_sid && (current_sid == prev_sid || is_cancellation)) {
-            if (current_sid != prev_sid) {
-                debug("%s: returning from previewed space %lld to original space %lld (gesture=%d, clicked=%d)\n",
-                      __FUNCTION__, current_sid, prev_sid, exited_via_gesture, mouse_clicked);
-                space_manager_focus_space(prev_sid);
-                current_sid = prev_sid;
-            }
+    //
+    // NOTE: Restore again once the Dock has settled. The restore reads and changes window manager state,
+    // so post it to the event loop instead of running it on the main queue next to this thread.
+    //
 
-            struct view *view = space_manager_find_view(&g_space_manager, current_sid);
-            if (view_is_invalid(view)) {
-                view_update(view);
-            }
-
-            struct window *restore_window = NULL;
-            if (prev_wid) {
-                struct window *prev_window = window_manager_find_window(&g_window_manager, prev_wid);
-                if (prev_window && !window_check_flag(prev_window, WINDOW_MINIMIZE)) {
-                    uint64_t win_sid = window_space(prev_window->id);
-                    if (win_sid == current_sid || window_is_sticky(prev_window->id)) {
-                        restore_window = prev_window;
-                    }
-                }
-            }
-
-            if (!restore_window) {
-                restore_window = window_manager_find_window_on_space_by_rank_filtering_window(&g_window_manager, current_sid, 1, 0);
-            }
-
-            if (restore_window) {
-                debug("%s: restoring focus to previous window %s %d on space %lld\n", __FUNCTION__, restore_window->application->name, restore_window->id, current_sid);
-                SLSSpaceSetFrontPSN(g_connection, current_sid, restore_window->application->psn);
-                window_manager_focus_window_with_raise(&restore_window->application->psn, restore_window->id, restore_window->ref);
-
-                g_process_manager.last_front_pid = g_process_manager.front_pid;
-                g_process_manager.front_pid = restore_window->application->pid;
-                g_window_manager.last_window_id = g_window_manager.focused_window_id;
-                g_window_manager.focused_window_id = restore_window->id;
-                g_window_manager.focused_window_psn = restore_window->application->psn;
-                event_signal_push(SIGNAL_WINDOW_FOCUSED, restore_window);
-            } else {
-                _SLPSSetFrontProcessWithOptions(&g_process_manager.finder_psn, 0, kCPSNoWindows);
-            }
-        }
-    };
-
-    restore_focus();
-
+    struct mission_control_restore *restore = malloc(sizeof(struct mission_control_restore));
+    *restore = (struct mission_control_restore) { prev_wid, prev_sid, mouse_clicked };
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.15f * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        restore_focus();
+        event_loop_post(&g_event_loop, MISSION_CONTROL_RESTORE_FOCUS, restore, 0);
     });
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.6f * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
@@ -2145,6 +2166,13 @@ static EVENT_HANDLER(MISSION_CONTROL_EXIT)
         __atomic_store_n(&g_mission_control_prev_pid, 0, __ATOMIC_RELEASE);
         __atomic_store_n(&g_mission_control_mouse_clicked, false, __ATOMIC_RELEASE);
     });
+}
+
+static EVENT_HANDLER(MISSION_CONTROL_RESTORE_FOCUS)
+{
+    struct mission_control_restore *restore = context;
+    mission_control_restore_focus(restore->prev_wid, restore->prev_sid, restore->mouse_clicked);
+    free(restore);
 }
 
 static EVENT_HANDLER(DOCK_DID_RESTART)
