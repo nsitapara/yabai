@@ -971,7 +971,8 @@ bool space_manager_focus_space_using_gesture(uint32_t new_did, uint64_t new_sid)
     //
     // NOTE: A space that is gone (e.g. removed while Mission Control was open) has no index. Its display then
     // resolves to the main display, and the jump below would swipe toward the first desktop and click.
-    // Check before the duplicate guard so a failed attempt never makes a retry report success.
+    // Check before the duplicate guard, and disarm the guard when no gesture is posted, so a failed
+    // attempt never makes a retry report success.
     //
 
     int cur_index = space_manager_mission_control_index(display_space_id(new_did));
@@ -1070,11 +1071,11 @@ bool space_manager_focus_space_using_gesture(uint32_t new_did, uint64_t new_sid)
                 CFRelease(step[p]);
             }
 
-            if (!built) return false;
+            if (!built) goto fail;
         }
     } else {
         CGEventRef event_dock_control = CGEventCreate(NULL);
-        if (!event_dock_control) return false;
+        if (!event_dock_control) goto fail;
 
         float sign = is_right ? 1.0 : -1.0;
         CGEventSetIntegerValueField(event_dock_control, /* kCGSEventTypeField            */  55, /* kCGSEventDockControl       */ 30);
@@ -1101,6 +1102,11 @@ bool space_manager_focus_space_using_gesture(uint32_t new_did, uint64_t new_sid)
     }
 
     return true;
+
+fail:
+    last_gesture_sid = 0;
+    last_gesture_time = 0;
+    return false;
 }
 #pragma clang diagnostic pop
 
@@ -1131,7 +1137,7 @@ enum space_op_error space_manager_focus_space(uint64_t sid)
             display_manager_focus_display(new_did, sid);
         }
     } else if (!space_manager_focus_space_using_gesture(new_did, sid)) {
-        return SPACE_OP_ERROR_SCRIPTING_ADDITION;
+        return SPACE_OP_ERROR_GESTURE;
     }
 
     return SPACE_OP_ERROR_SUCCESS;
@@ -1172,7 +1178,7 @@ enum space_op_error space_manager_switch_space(uint64_t sid)
         return SPACE_OP_ERROR_SUCCESS;
     }
 
-    if (!space_manager_focus_space_using_gesture(did, sid)) return SPACE_OP_ERROR_SCRIPTING_ADDITION;
+    if (!space_manager_focus_space_using_gesture(did, sid)) return SPACE_OP_ERROR_GESTURE;
     return SPACE_OP_ERROR_SUCCESS;
 }
 

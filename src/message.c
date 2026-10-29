@@ -1774,6 +1774,8 @@ static void handle_domain_display(FILE *rsp, struct token domain, char *message)
                 daemon_fail(rsp, "cannot focus space because mission-control is active.\n");
             } else if (result == SPACE_OP_ERROR_SCRIPTING_ADDITION) {
                 daemon_fail(rsp, "cannot focus space due to an error with the scripting-addition.\n");
+            } else if (result == SPACE_OP_ERROR_GESTURE) {
+                daemon_fail(rsp, "cannot focus space because the switch gesture could not be posted (space is gone, or the gesture failed).\n");
             }
         }
     } else if (token_equals(command, COMMAND_DISPLAY_LABEL)) {
@@ -1825,6 +1827,8 @@ static void handle_domain_space(FILE *rsp, struct token domain, char *message)
                     daemon_fail(rsp, "cannot focus space because mission-control is active.\n");
                 } else if (result == SPACE_OP_ERROR_SCRIPTING_ADDITION) {
                     daemon_fail(rsp, "cannot focus space due to an error with the scripting-addition.\n");
+                } else if (result == SPACE_OP_ERROR_GESTURE) {
+                    daemon_fail(rsp, "cannot focus space because the switch gesture could not be posted (space is gone, or the gesture failed).\n");
                 }
             }
         } else if (token_equals(command, COMMAND_SPACE_SWITCH)) {
@@ -1839,6 +1843,8 @@ static void handle_domain_space(FILE *rsp, struct token domain, char *message)
                     daemon_fail(rsp, "cannot focus space because mission-control is active.\n");
                 } else if (result == SPACE_OP_ERROR_SCRIPTING_ADDITION) {
                     daemon_fail(rsp, "cannot focus space due to an error with the scripting-addition.\n");
+                } else if (result == SPACE_OP_ERROR_GESTURE) {
+                    daemon_fail(rsp, "cannot focus space because the switch gesture could not be posted (space is gone, or the gesture failed).\n");
                 }
             }
         } else if (token_equals(command, COMMAND_SPACE_MOVE)) {
