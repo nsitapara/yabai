@@ -461,10 +461,17 @@ void display_manager_set_active_display_id(uint32_t did)
 {
     if (did == g_display_manager.current_display_id) return;
 
+    //
+    // NOTE: Leave current_display_id to DISPLAY_CHANGED. Setting it here made that handler read the
+    // change as already applied and return early: it skipped last_display_id, the space bookkeeping
+    // and the display_changed signal whenever yabai focused a display itself.
+    //
+
     CFStringRef uuid = display_uuid(did);
+    if (!uuid) return;
+
     SLSSetActiveMenuBarDisplayIdentifier(g_connection, uuid, uuid);
     CFRelease(uuid);
-    g_display_manager.current_display_id = did;
 }
 
 #pragma clang diagnostic push
