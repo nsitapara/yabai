@@ -505,12 +505,16 @@ int space_manager_mission_control_index(uint64_t sid)
     for (int i = 0; i < display_spaces_count; ++i) {
         CFDictionaryRef display_ref = CFArrayGetValueAtIndex(display_spaces_ref, i);
         CFArrayRef spaces_ref = CFDictionaryGetValue(display_ref, CFSTR("Spaces"));
+        if (!spaces_ref) continue;
+
         int spaces_count = CFArrayGetCount(spaces_ref);
 
         for (int j = 0; j < spaces_count; ++j) {
             CFDictionaryRef space_ref = CFArrayGetValueAtIndex(spaces_ref, j);
             CFNumberRef sid_ref = CFDictionaryGetValue(space_ref, CFSTR("ManagedSpaceID"));
             if (!sid_ref) sid_ref = CFDictionaryGetValue(space_ref, CFSTR("id64"));
+            if (!sid_ref) continue;
+
             CFNumberGetValue(sid_ref, CFNumberGetType(sid_ref), &result);
             if (sid == result) goto out;
 
@@ -536,12 +540,16 @@ uint64_t space_manager_mission_control_space(int desktop_id)
     for (int i = 0; i < display_spaces_count; ++i) {
         CFDictionaryRef display_ref = CFArrayGetValueAtIndex(display_spaces_ref, i);
         CFArrayRef spaces_ref = CFDictionaryGetValue(display_ref, CFSTR("Spaces"));
+        if (!spaces_ref) continue;
+
         int spaces_count = CFArrayGetCount(spaces_ref);
 
         for (int j = 0; j < spaces_count; ++j) {
             CFDictionaryRef space_ref = CFArrayGetValueAtIndex(spaces_ref, j);
             CFNumberRef sid_ref = CFDictionaryGetValue(space_ref, CFSTR("ManagedSpaceID"));
             if (!sid_ref) sid_ref = CFDictionaryGetValue(space_ref, CFSTR("id64"));
+            if (!sid_ref) continue;
+
             CFNumberGetValue(sid_ref, CFNumberGetType(sid_ref), &result);
             if (desktop_cnt == desktop_id) goto out;
 
@@ -573,11 +581,15 @@ uint64_t space_manager_prev_space(uint64_t sid)
     for (int i = 0; i < display_spaces_count; ++i) {
         CFDictionaryRef display_ref = CFArrayGetValueAtIndex(display_spaces_ref, i);
         CFArrayRef spaces_ref = CFDictionaryGetValue(display_ref, CFSTR("Spaces"));
+        if (!spaces_ref) continue;
+
         int spaces_count = CFArrayGetCount(spaces_ref);
 
         for (int j = 0; j < spaces_count; ++j) {
             CFDictionaryRef space_ref = CFArrayGetValueAtIndex(spaces_ref, j);
             CFNumberRef sid_ref = CFDictionaryGetValue(space_ref, CFSTR("id64"));
+            if (!sid_ref) continue;
+
             CFNumberGetValue(sid_ref, CFNumberGetType(sid_ref), &n_sid);
             if (n_sid == sid) goto out;
 
@@ -602,11 +614,15 @@ uint64_t space_manager_next_space(uint64_t sid)
     for (int i = 0; i < display_spaces_count; ++i) {
         CFDictionaryRef display_ref = CFArrayGetValueAtIndex(display_spaces_ref, i);
         CFArrayRef spaces_ref = CFDictionaryGetValue(display_ref, CFSTR("Spaces"));
+        if (!spaces_ref) continue;
+
         int spaces_count = CFArrayGetCount(spaces_ref);
 
         for (int j = 0; j < spaces_count; ++j) {
             CFDictionaryRef space_ref = CFArrayGetValueAtIndex(spaces_ref, j);
             CFNumberRef sid_ref = CFDictionaryGetValue(space_ref, CFSTR("id64"));
+            if (!sid_ref) continue;
+
             CFNumberGetValue(sid_ref, CFNumberGetType(sid_ref), &n_sid);
             if (found_sid) goto out;
 
@@ -626,13 +642,17 @@ uint64_t space_manager_first_space(void)
     CFArrayRef display_spaces_ref = SLSCopyManagedDisplaySpaces(g_connection);
     if (!display_spaces_ref) return 0;
 
+    if (CFArrayGetCount(display_spaces_ref) == 0) goto out;
+
     CFDictionaryRef display_ref = CFArrayGetValueAtIndex(display_spaces_ref, 0);
     CFArrayRef spaces_ref = CFDictionaryGetValue(display_ref, CFSTR("Spaces"));
+    if (!spaces_ref || CFArrayGetCount(spaces_ref) == 0) goto out;
 
     CFDictionaryRef space_ref = CFArrayGetValueAtIndex(spaces_ref, 0);
     CFNumberRef sid_ref = CFDictionaryGetValue(space_ref, CFSTR("id64"));
-    CFNumberGetValue(sid_ref, CFNumberGetType(sid_ref), &sid);
+    if (sid_ref) CFNumberGetValue(sid_ref, CFNumberGetType(sid_ref), &sid);
 
+out:
     CFRelease(display_spaces_ref);
     return sid;
 }
@@ -645,14 +665,20 @@ uint64_t space_manager_last_space(void)
     if (!display_spaces_ref) return 0;
 
     int display_spaces_count = CFArrayGetCount(display_spaces_ref);
+    if (display_spaces_count == 0) goto out;
+
     CFDictionaryRef display_ref = CFArrayGetValueAtIndex(display_spaces_ref, display_spaces_count-1);
     CFArrayRef spaces_ref = CFDictionaryGetValue(display_ref, CFSTR("Spaces"));
+    if (!spaces_ref) goto out;
+
     int spaces_count = CFArrayGetCount(spaces_ref);
+    if (spaces_count == 0) goto out;
 
     CFDictionaryRef space_ref = CFArrayGetValueAtIndex(spaces_ref, spaces_count-1);
     CFNumberRef sid_ref = CFDictionaryGetValue(space_ref, CFSTR("id64"));
-    CFNumberGetValue(sid_ref, CFNumberGetType(sid_ref), &sid);
+    if (sid_ref) CFNumberGetValue(sid_ref, CFNumberGetType(sid_ref), &sid);
 
+out:
     CFRelease(display_spaces_ref);
     return sid;
 }
