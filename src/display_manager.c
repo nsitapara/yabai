@@ -471,12 +471,12 @@ out:
 
 void display_manager_set_active_display_id(uint32_t did)
 {
-    if (did == g_display_manager.current_display_id) return;
-
     //
     // NOTE: Leave current_display_id to DISPLAY_CHANGED. Setting it here made that handler read the
     // change as already applied and return early: it skipped last_display_id, the space bookkeeping
-    // and the display_changed signal whenever yabai focused a display itself.
+    // and the display_changed signal whenever yabai focused a display itself. For the same reason do
+    // not skip the call when did matches current_display_id: until DISPLAY_CHANGED runs, that value
+    // can lag the menu-bar display, and returning would leave the menu bar on the other display.
     //
 
     CFStringRef uuid = display_uuid(did);
