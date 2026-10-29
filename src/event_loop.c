@@ -781,7 +781,8 @@ static EVENT_HANDLER(WINDOW_CREATED)
     //
     // NOTE: An app whose main thread is blocked when its window opens (e.g. on a keychain prompt at launch)
     // cannot answer _AXUIElementGetWindow, and kAXCreatedNotification is never sent again for that window.
-    // Retry with backoff (1+2+4+8+16+32s); each failed call stalls this thread for the AX messaging timeout.
+    // Retry six times with backoff (1+2+4+8+16+32s). With the first attempt that makes at most seven failed
+    // calls, and each one stalls this thread for the AX messaging timeout.
     // After the last retry, the app's next activation or a space change resolves it through applications_to_refresh.
     //
 
@@ -848,7 +849,12 @@ static EVENT_HANDLER(WINDOW_CREATED)
     if (window_manager_should_manage_window(window) && !window_manager_find_managed_window(&g_window_manager, window)) {
         uint64_t sid;
 
-        if (g_window_manager.window_origin_mode == WINDOW_ORIGIN_DEFAULT) {
+        //
+        // NOTE: A window resolved by a retry (param1 > 0) opened seconds ago, possibly on a space the user
+        // has since left. Tile it where it is instead of on the space focused now.
+        //
+
+        if (param1 > 0 || g_window_manager.window_origin_mode == WINDOW_ORIGIN_DEFAULT) {
             sid = window_space(window->id);
         } else if (g_window_manager.window_origin_mode == WINDOW_ORIGIN_FOCUSED) {
             sid = g_space_manager.current_space_id;
