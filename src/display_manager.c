@@ -96,10 +96,20 @@ CFStringRef display_manager_active_display_uuid(void)
 uint32_t display_manager_active_display_id(void)
 {
     CFStringRef uuid = display_manager_active_display_uuid();
-    assert(uuid);
+    uint32_t result = 0;
 
-    uint32_t result = display_id(uuid);
-    CFRelease(uuid);
+    if (uuid) {
+        result = display_id(uuid);
+        CFRelease(uuid);
+    }
+
+    //
+    // NOTE: While displays re-probe at wake there can be no menu-bar display.
+    // Keep the last known display instead of crashing; DISPLAY_CHANGED then ignores the flap.
+    //
+
+    if (!result) result = g_display_manager.current_display_id;
+    if (!result) result = display_manager_main_display_id();
 
     return result;
 }
@@ -200,6 +210,7 @@ CFStringRef display_manager_arrangement_display_uuid(int arrangement)
 {
     CFStringRef result = NULL;
     CFArrayRef displays = SLSCopyManagedDisplays(g_connection);
+    if (!displays) return NULL;
 
     int count = CFArrayGetCount(displays);
     int index = arrangement - 1;

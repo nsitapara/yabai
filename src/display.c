@@ -75,7 +75,7 @@ void display_serialize(FILE *rsp, uint32_t did, uint64_t flags)
         uint64_t *space_list = display_space_list(did, &count);
 
         fprintf(rsp, "\t\"spaces\":[");
-        if (space_list) {
+        if (space_list && count > 0) {
             int first_mci = space_manager_mission_control_index(space_list[0]);
             for (int i = 0; i < count; ++i) {
                 if (i < count - 1) {
@@ -201,10 +201,10 @@ int display_space_count(uint32_t did)
     for (int i = 0; i < display_spaces_count; ++i) {
         CFDictionaryRef display_ref = CFArrayGetValueAtIndex(display_spaces_ref, i);
         CFStringRef identifier = CFDictionaryGetValue(display_ref, CFSTR("Display Identifier"));
-        if (!CFEqual(uuid, identifier)) continue;
+        if (!identifier || !CFEqual(uuid, identifier)) continue;
 
         CFArrayRef spaces_ref = CFDictionaryGetValue(display_ref, CFSTR("Spaces"));
-        space_count = CFArrayGetCount(spaces_ref);
+        if (spaces_ref) space_count = CFArrayGetCount(spaces_ref);
         break;
     }
 
@@ -229,19 +229,26 @@ uint64_t *display_space_list(uint32_t did, int *count)
     for (int i = 0; i < display_spaces_count; ++i) {
         CFDictionaryRef display_ref = CFArrayGetValueAtIndex(display_spaces_ref, i);
         CFStringRef identifier = CFDictionaryGetValue(display_ref, CFSTR("Display Identifier"));
-        if (!CFEqual(uuid, identifier)) continue;
+        if (!identifier || !CFEqual(uuid, identifier)) continue;
+
+        //
+        // NOTE: While displays re-probe at wake an entry can lack its space list or ids.
+        //
 
         CFArrayRef spaces_ref = CFDictionaryGetValue(display_ref, CFSTR("Spaces"));
+        if (!spaces_ref) continue;
+
         int spaces_count = CFArrayGetCount(spaces_ref);
 
         space_list = ts_alloc_list(uint64_t, spaces_count);
-        *count = spaces_count;
+        *count = 0;
 
         for (int j = 0; j < spaces_count; ++j) {
             CFDictionaryRef space_ref = CFArrayGetValueAtIndex(spaces_ref, j);
             CFNumberRef sid_ref = CFDictionaryGetValue(space_ref, CFSTR("ManagedSpaceID"));
             if (!sid_ref) sid_ref = CFDictionaryGetValue(space_ref, CFSTR("id64"));
-            CFNumberGetValue(sid_ref, CFNumberGetType(sid_ref), &space_list[j]);
+            if (!sid_ref) continue;
+            CFNumberGetValue(sid_ref, CFNumberGetType(sid_ref), &space_list[(*count)++]);
         }
     }
 

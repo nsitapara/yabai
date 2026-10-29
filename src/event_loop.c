@@ -1436,6 +1436,8 @@ static EVENT_HANDLER(SPACE_CHANGED)
 static EVENT_HANDLER(DISPLAY_CHANGED)
 {
     uint32_t new_did = display_manager_active_display_id();
+    if (!new_did) return;
+
     if (g_display_manager.current_display_id == new_did) {
         debug("%s: newly activated display %d was already active (%d)! ignoring event..\n", __FUNCTION__, g_display_manager.current_display_id, new_did);
         return;

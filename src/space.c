@@ -6,6 +6,11 @@ inline uint32_t space_display_id(uint64_t sid)
     if (!uuid_string) return 0;
 
     CFUUIDRef uuid = CFUUIDCreateFromString(NULL, uuid_string);
+    if (!uuid) {
+        CFRelease(uuid_string);
+        return 0;
+    }
+
     uint32_t id = CGDisplayGetDisplayIDFromUUID(uuid);
 
     CFRelease(uuid);
