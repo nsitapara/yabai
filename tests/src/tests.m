@@ -319,7 +319,7 @@ CFArrayRef CGWindowListCopyWindowInfo(CGWindowListOption option, CGWindowID rela
     ANGRY_ENTRY(coercesInsertDirectionToStackWhenTargetViewIsStacked)           \
     ANGRY_ENTRY(updatesFocusFollowsMouseMode)                                   \
     ANGRY_ENTRY(suppressesRapidGestureToSameSpace)                              \
-    ANGRY_ENTRY(rateLimitsRapidGesturesUnderThreshold)                         \
+    ANGRY_ENTRY(refusesGestureToUnknownSpace)                                   \
     ANGRY_ENTRY(resolvesActiveSpaceForRunningApplications)                      \
     ANGRY_ENTRY(balancesBspTreeLeafRatiosEquallyForTwoLeaves)                   \
     ANGRY_ENTRY(balancesBspTreeLeafRatiosProportionallyForAsymmetricSubtrees)   \

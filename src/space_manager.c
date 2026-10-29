@@ -940,45 +940,35 @@ enum space_op_error space_manager_move_space_to_display(struct space_manager *sm
 bool space_manager_focus_space_using_gesture(uint32_t new_did, uint64_t new_sid)
 {
     static uint64_t last_gesture_sid = 0;
-    static uint64_t prev_gesture_sid = 0;
     static uint64_t last_gesture_time = 0;
-    static int ping_pong_count = 0;
+
+    //
+    // NOTE: A space that is gone (e.g. removed while Mission Control was open) has no index. Its display then
+    // resolves to the main display, and the jump below would swipe toward the first desktop and click.
+    // Check before the duplicate guard so a failed attempt never makes a retry report success.
+    //
+
+    int cur_index = space_manager_mission_control_index(display_space_id(new_did));
+    int new_index = space_manager_mission_control_index(new_sid);
+    if (cur_index <= 0 || new_index <= 0) return false;
 
     uint64_t now = read_os_timer();
     uint64_t dt_ms = (now > last_gesture_time) ? (now - last_gesture_time) / 1000000ULL : 0;
 
-    // Guard 1: Duplicate gesture to the same space within 350ms
+    //
+    // NOTE: Mission Control exit restores focus twice. Skip a repeat to the space the last gesture went to.
+    // Measure from that gesture, so repeated presses cannot keep extending the window. Presses to another
+    // space are never dropped: they are what the user asked for.
+    //
+
     if (last_gesture_sid == new_sid && dt_ms < 350) {
-        last_gesture_time = now;
         debug("%s: skipping duplicate gesture to space %lld (dt=%llums)\n", __FUNCTION__, new_sid, dt_ms);
         return true;
     }
 
-    // Guard 2: Minimum physical gesture spacing (150ms) to prevent Dock queue storms
-    if (dt_ms < 150) {
-        debug("%s: rate-limiting gesture to space %lld (dt=%llums < 150ms)\n", __FUNCTION__, new_sid, dt_ms);
-        return false;
-    }
-
-    // Guard 3: Ping-pong oscillation breaker
-    if (new_sid == prev_gesture_sid && dt_ms < 400) {
-        ping_pong_count++;
-        if (ping_pong_count >= 2) {
-            debug("%s: ping-pong oscillation detected between spaces %lld and %lld! Blocking loop.\n",
-                  __FUNCTION__, last_gesture_sid, new_sid);
-            return false;
-        }
-    } else if (dt_ms >= 500) {
-        ping_pong_count = 0;
-    }
-
-    prev_gesture_sid = last_gesture_sid;
     last_gesture_sid = new_sid;
     last_gesture_time = now;
     __atomic_store_n(&__last_space_change_time, now, __ATOMIC_RELEASE);
-
-    int cur_index = space_manager_mission_control_index(display_space_id(new_did));
-    int new_index = space_manager_mission_control_index(new_sid);
 
     int count = abs(new_index - cur_index);
     if (count == 0) {
@@ -1016,13 +1006,18 @@ bool space_manager_focus_space_using_gesture(uint32_t new_did, uint64_t new_sid)
         //
         // NOTE: Post the steps back to back. A pause between them lets the Dock drop
         // a step of a multi-space jump (e.g. 4 -> 1 ending up on space 2).
+        // Build all three phases of a step before posting any of them, so a failure
+        // never leaves the Dock with a gesture that began but did not end.
         //
 
         for (int i = 0; i < count; ++i) {
+            CGEventRef step[3] = { NULL, NULL, NULL };
+            bool built = true;
+
             for (int p = 0; p < 3; ++p) {
                 int phase = phases[p];
                 CGEventRef ev = CGEventCreate(NULL);
-                if (!ev) continue;
+                if (!ev) { built = false; break; }
 
                 CGEventSetIntegerValueField(ev, /* kCGSEventTypeField            */  55, /* kCGSEventDockControl       */ 30);
                 CGEventSetIntegerValueField(ev, /* kCGEventGestureHIDType        */ 110, /* kIOHIDEventTypeDockSwipe   */ 23);
@@ -1038,13 +1033,18 @@ bool space_manager_focus_space_using_gesture(uint32_t new_did, uint64_t new_sid)
                     CGEventSetDoubleValueField(ev, /* kCGEventGestureSwipeVelocityX */ 129, modern_vel);
                 }
 
-                CGEventRef augmented = iss_augment_dock_swipe_event(ev);
+                step[p] = iss_augment_dock_swipe_event(ev);
                 CFRelease(ev);
-                if (!augmented) continue;
-
-                CGEventPost(kCGSessionEventTap, augmented);
-                CFRelease(augmented);
+                if (!step[p]) { built = false; break; }
             }
+
+            for (int p = 0; p < 3; ++p) {
+                if (!step[p]) continue;
+                if (built) CGEventPost(kCGSessionEventTap, step[p]);
+                CFRelease(step[p]);
+            }
+
+            if (!built) return false;
         }
     } else {
         CGEventRef event_dock_control = CGEventCreate(NULL);
@@ -1104,8 +1104,8 @@ enum space_op_error space_manager_focus_space(uint64_t sid)
         if (cur_did != new_did) {
             display_manager_focus_display(new_did, sid);
         }
-    } else {
-        space_manager_focus_space_using_gesture(new_did, sid);
+    } else if (!space_manager_focus_space_using_gesture(new_did, sid)) {
+        return SPACE_OP_ERROR_SCRIPTING_ADDITION;
     }
 
     return SPACE_OP_ERROR_SUCCESS;
@@ -1146,7 +1146,7 @@ enum space_op_error space_manager_switch_space(uint64_t sid)
         return SPACE_OP_ERROR_SUCCESS;
     }
 
-    space_manager_focus_space_using_gesture(did, sid);
+    if (!space_manager_focus_space_using_gesture(did, sid)) return SPACE_OP_ERROR_SCRIPTING_ADDITION;
     return SPACE_OP_ERROR_SUCCESS;
 }
 

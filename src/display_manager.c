@@ -505,7 +505,7 @@ enum space_op_error display_manager_focus_space(uint32_t did, uint64_t sid)
         return SPACE_OP_ERROR_SUCCESS;
     }
 
-    space_manager_focus_space_using_gesture(did, sid);
+    if (!space_manager_focus_space_using_gesture(did, sid)) return SPACE_OP_ERROR_SCRIPTING_ADDITION;
     return SPACE_OP_ERROR_SUCCESS;
 }
 

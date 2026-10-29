@@ -412,13 +412,12 @@ ANGRY_TEST(suppressesRapidGestureToSameSpace)
     ANGRY_ASSERT(dup_res, "duplicate gesture to same space must be suppressed as success no-op");
 }
 
-ANGRY_TEST(rateLimitsRapidGesturesUnderThreshold)
+ANGRY_TEST(refusesGestureToUnknownSpace)
 {
     uint64_t sid = space_manager_active_space();
     uint32_t did = space_display_id(sid);
-    space_manager_focus_space_using_gesture(did, sid);
-    bool rate_res = space_manager_focus_space_using_gesture(did, sid + 9999);
-    ANGRY_ASSERT(!rate_res, "rapid consecutive gesture to another space must be rate-limited");
+    bool unknown_res = space_manager_focus_space_using_gesture(did, sid + 9999);
+    ANGRY_ASSERT(!unknown_res, "gesture to a space with no mission control index must fail");
 }
 
 ANGRY_TEST(resolvesActiveSpaceForRunningApplications)

@@ -18,6 +18,9 @@
 //
 // The layout below is reverse-engineered and matches the notes shared by the
 // community in InstantSpaceSwitcher issue #72.
+//
+// Derived from InstantSpaceSwitcher (https://github.com/jurplel/InstantSpaceSwitcher),
+// MIT licensed; see ISS-LICENSE next to this file.
 
 static const int8_t kCGEventDataTagInt64OrBinaryBlob = 0b00;
 static const int8_t kCGEventDataTagInt32 = 0b01;

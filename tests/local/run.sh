@@ -13,3 +13,7 @@ python3 -I "$root/tests/local/check_query_json.py" "$root"
 xcrun clang -std=c11 -g -fsanitize=undefined -I "$root/src" "$root/tests/local/test_mouse_press.c" \
     -framework ApplicationServices -o "$work/test-mouse-press"
 "$work/test-mouse-press"
+
+xcrun clang -std=c11 -g -fsanitize=undefined -I "$root/src" "$root/tests/local/test_gesture_serialize.c" \
+    -framework ApplicationServices -o "$work/test-gesture-serialize"
+"$work/test-gesture-serialize"
